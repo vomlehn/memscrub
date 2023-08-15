@@ -1,0 +1,77 @@
+#!/usr/bin/python3
+
+# The configuration of physical memory isn't readily available in places like
+# the /sys filesystem, so this parses the dmesg output stored in
+# /var/log/dmesg. It then prints a description of all of the usable RAM
+# area it found to standard output, one per line, with a start and end location
+# (inclusive). The locations are printed as values, each with a leading '0x'
+# string.
+#
+# This is hardly a super reliable way to do this and is likely to be
+# processor-dependent, processor/bootloader-dependent or even worse. Still,
+# it's easy enough to do this for any new platform.
+
+import re
+
+def read_file(file_path):
+    with open(file_path, "r") as file:
+        lines = file.readlines()
+    return lines
+
+class PhysMapEntry:
+    def __init__(self, type, start, end, tag):
+        self.type = type
+        self.start = start
+        self.end = end
+        self.tag = tag
+
+class PhysMap:
+    def __init__(self):
+        self.map = []
+
+    def extract_phys_map(self, lines):
+        state = 'scan'
+
+        phys_map_start_re = \
+                re.compile('kernel: BIOS-provided physical RAM map:$')
+        boilerplate = 'kernel: [^ ]* '
+        type = '([^ ]*)'
+        hex = '(0x[0-9a-fA-F]+)'
+        tag = '([^ ]*)'
+        phys_map_entry_pat = boilerplate + '\[' + type + ' ' + hex + '-' + \
+                hex + '] ' + tag
+        phys_map_entry_re = re.compile(phys_map_entry_pat)
+
+        for line in lines:
+            line = line.strip()
+
+            if state == 'scan':
+                match = phys_map_start_re.search(line)
+                if match is not None:
+                    state = 'phys_map'
+
+            elif state == 'phys_map':
+                match = phys_map_entry_re.search(line)
+                if match is not None:
+                    entry = PhysMapEntry(match.group(1), \
+                            int(match.group(2), 0), \
+                            int(match.group(3), 0), \
+                            match.group(4))
+                    self.map.append(entry)
+                else:
+                    state = 'done'
+
+        if state != 'done':
+            raise RuntimeError('Did not read the whole physical memory map')
+
+    def phys_map(self):
+        return self.map
+
+lines = read_file('/var/log/dmesg')
+phys_map = PhysMap()
+phys_map.extract_phys_map(lines)
+map = phys_map.phys_map()
+
+for m in map:
+    if m.tag == 'usable':
+        print("0x{:010x} 0x{:010x}".format(m.start, m.end))
