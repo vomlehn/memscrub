@@ -1,8 +1,8 @@
 extern crate libc;
 
-use libc::{c_void, MAP_FAILED, MAP_SHARED, PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS, madvise, MADV_RANDOM};
+use libc::{c_void, MAP_FAILED, MAP_SHARED, PROT_READ};
 use std::fs::File;
-use std::io::{BufRead, Read, Seek, SeekFrom};
+use std::io::{BufRead, Seek, SeekFrom};
 use std::os::unix::io::AsRawFd;
 use std::ptr;
 use std::process::{Command, Stdio};
@@ -43,23 +43,30 @@ static MY_CACHE_DESC: MyCacheDesc = MyCacheDesc {
 
 fn main() -> std::io::Result<()> {
     let mut my_cache_desc = MY_CACHE_DESC.clone();
-    let mut my_scrub_areas = read_scrub_areas();
+    let phys_scrub_areas = read_scrub_areas();
 
-    let mut total: usize = 0;
-    for scrub_area in &my_scrub_areas {
+    let mut total_bytes: usize = 0;
+    for scrub_area in &phys_scrub_areas {
         let delta = my_cache_desc.size_in_cachelines(&scrub_area);
-        total += delta;
+        total_bytes += delta;
     }
-    total *= my_cache_desc.cacheline_size();
-    println!("total size {}", total);
+    total_bytes *= my_cache_desc.cacheline_size();
+
+    // Print the tuples in the vector
+    println!("Physical addresses:");
+    for scrub_area in &phys_scrub_areas {
+        println!("{:?}", scrub_area);
+    }
+    println!("total size {}", total_bytes);
 
     // Open the file for reading
     let mut file = File::open("/dev/mem")?;
+    let mut virt_scrub_areas: Vec<ScrubArea> = Vec::new();
 
-    for scrub_area in &mut my_scrub_areas {
+    for scrub_area in &phys_scrub_areas {
         // Define the start and end offsets
-        let mut start_offset = scrub_area.start as usize; // Specify your start offset here
-        let mut end_offset = scrub_area.end as usize;   // Specify your end offset here
+        let start_offset = scrub_area.start as usize; // Specify your start offset here
+        let end_offset = scrub_area.end as usize;   // Specify your end offset here
 
         // Calculate the length of the mapped portion
         let length = end_offset - start_offset + 1;
@@ -86,18 +93,29 @@ println!("mmap failed");
             return Err(std::io::Error::last_os_error());
         }
 
-        start_offset -= data as usize;
-        end_offset -= data as usize;
-        scrub_area.start = start_offset as *const u8;
-        scrub_area.end = end_offset as *const u8;
+        let end = data as usize + length - 1;
+        let scrub_area =
+            ScrubArea { start: data as *const u8, end: end as *const u8, };
+        virt_scrub_areas.push(scrub_area);
     }
 
-    let scrubber = MemoryScrubber::<MyCacheDesc,
-        MyCacheline>::new(&mut my_cache_desc, &my_scrub_areas);
-    match scrubber {
+    // Print the tuples in the vector
+    println!("Mapped addresses:");
+    for scrub_area in &virt_scrub_areas {
+        println!("{:?}", scrub_area);
+    }
+
+    let mut scrubber = match MemoryScrubber::<MyCacheDesc,
+        MyCacheline>::new(&mut my_cache_desc, &virt_scrub_areas) {
         Err(e) => panic!("Failed to create memory scrubber: {}", e),
-        Ok(_) => {},
+        Ok(scrubber) => scrubber,
     };
+
+    match scrubber.scrub(total_bytes) {
+        Err(e) => panic!("Scrub failed: {}", e),
+        Ok(_) => {},
+    }
+
     Ok(())
 }
 
@@ -138,60 +156,5 @@ fn read_scrub_areas () -> Vec<ScrubArea> {
         }
     }
 
-    // Print the tuples in the vector
-    for scrub_area in &my_scrub_areas {
-        println!("{:?}", scrub_area);
-    }
-
     my_scrub_areas
 }
-
-/*
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use std::os::unix::io::AsRawFd;
-use std::ptr;
-use libc::{c_void, MAP_FAILED, MAP_SHARED, PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS, madvise, MADV_RANDOM};
-
-fn main() -> std::io::Result<()> {
-    // Open the file for reading
-    let mut file = File::open("path/to/your/file")?;
-
-    // Define the start and end offsets
-    let start_offset = 100; // Specify your start offset here
-    let end_offset = 300;   // Specify your end offset here
-
-    // Calculate the length of the mapped portion
-    let length = end_offset - start_offset;
-
-    // Seek to the start offset in the file
-    file.seek(SeekFrom::Start(start_offset as u64))?;
-
-    // Allocate memory to map the file portion
-    let mut data: *mut c_void = ptr::null_mut();
-    unsafe {
-        data = libc::mmap(
-            ptr::null_mut(),
-            length as usize,
-            PROT_READ | PROT_WRITE, // Read and write access
-            MAP_SHARED,             // Share with other processes
-            file.as_raw_fd(),
-            start_offset as i64,
-        );
-    }
-
-    if data == MAP_FAILED {
-        return Err(std::io::Error::last_os_error());
-    }
-
-    // Do something with the mapped data
-    // ...
-
-    // Unmap the memory when done
-    unsafe {
-        libc::munmap(data, length as usize);
-    }
-
-    Ok(())
-}
-*/
