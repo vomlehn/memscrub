@@ -4,53 +4,22 @@ use libc::{c_void, MAP_FAILED, MAP_SHARED, PROT_READ};
 use std::fs::File;
 use std::io::{BufRead, Seek, SeekFrom};
 use std::os::unix::io::AsRawFd;
-use std::ptr;
 use std::process::{Command, Stdio};
+use std::ptr;
 
-use libmemscrub::{CacheDesc, Cacheline, MemoryScrubber, ScrubArea};
-
-type ECCData = u64;
-const MY_CACHELINE_ITEMS: usize = 8;
-const MY_CACHE_INDEX_WIDTH: usize = 10;
-
-#[repr(C)]
-struct MyCacheline {
-    data: [ECCData; MY_CACHELINE_ITEMS],
-}
-
-impl Cacheline for MyCacheline {}
-
-#[derive(Clone)]
-struct MyCacheDesc {
-    cache_index_width: usize,
-}
-
-impl CacheDesc<MyCacheline> for MyCacheDesc {
-    fn cache_index_width(&self) -> usize {
-        self.cache_index_width
-    }
-
-    fn read_cacheline(&mut self, cacheline_ptr: *const MyCacheline) {
-        let cacheline = unsafe { &*cacheline_ptr };
-        let cacheline_data = &cacheline.data[0];
-        let _dummy = unsafe { ptr::read(cacheline_data) };
-    }
-}
-
-static MY_CACHE_DESC: MyCacheDesc = MyCacheDesc {
-    cache_index_width: MY_CACHE_INDEX_WIDTH,
-};
+use libmemscrub_arch::{BaseCacheDesc, CACHE_DESC, CacheDesc,
+    Cacheline, MemoryScrubber, ScrubArea};
 
 fn main() -> std::io::Result<()> {
-    let mut my_cache_desc = MY_CACHE_DESC.clone();
+    let mut cache_desc = CACHE_DESC.clone();
     let phys_scrub_areas = read_scrub_areas();
 
     let mut total_bytes: usize = 0;
     for scrub_area in &phys_scrub_areas {
-        let delta = my_cache_desc.size_in_cachelines(&scrub_area);
+        let delta = cache_desc.size_in_cachelines(&scrub_area);
         total_bytes += delta;
     }
-    total_bytes *= my_cache_desc.cacheline_size();
+    total_bytes *= cache_desc.cacheline_size();
 
     // Print the tuples in the vector
     println!("Physical addresses:");
@@ -105,8 +74,8 @@ println!("mmap failed");
         println!("{:?}", scrub_area);
     }
 
-    let mut scrubber = match MemoryScrubber::<MyCacheDesc,
-        MyCacheline>::new(&mut my_cache_desc, &virt_scrub_areas) {
+    let mut scrubber = match MemoryScrubber::<CacheDesc,
+        Cacheline>::new(&mut cache_desc, &virt_scrub_areas) {
         Err(e) => panic!("Failed to create memory scrubber: {}", e),
         Ok(scrubber) => scrubber,
     };
@@ -131,7 +100,7 @@ fn read_scrub_areas () -> Vec<ScrubArea> {
     let reader = std::io::BufReader::new(output);
 
     // Vector to store tuples of usize values
-    let mut my_scrub_areas: Vec<ScrubArea> = Vec::new();
+    let mut scrub_areas: Vec<ScrubArea> = Vec::new();
 
     // Read lines from the program's output and process them
     for line in reader.lines() {
@@ -151,10 +120,10 @@ fn read_scrub_areas () -> Vec<ScrubArea> {
                 let scrub_area = ScrubArea {
                     start: val1 as *const u8, end: val2 as *const u8,
                 };
-                my_scrub_areas.push(scrub_area);
+                scrub_areas.push(scrub_area);
             }
         }
     }
 
-    my_scrub_areas
+    scrub_areas
 }
