@@ -7,8 +7,8 @@ use std::os::unix::io::AsRawFd;
 use std::process::{Command, Stdio};
 use std::ptr;
 
-use libmemscrub_arch::{BaseCacheDesc, CACHE_DESC, CacheDesc,
-    Cacheline, MemoryScrubber, ScrubArea};
+use memscrublib_arch::{BaseCacheDesc, CACHE_DESC, CacheDesc, Cacheline,
+    MemoryScrubber, ScrubArea};
 
 fn main() -> std::io::Result<()> {
     let mut cache_desc = CACHE_DESC.clone();
