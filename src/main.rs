@@ -24,7 +24,9 @@ fn main() -> std::io::Result<()> {
     // Print the tuples in the vector
     println!("Physical addresses:");
     for scrub_area in &phys_scrub_areas {
-        println!("{:?}", scrub_area);
+        println!("{:p}-{:p}: {}", scrub_area.start, scrub_area.end,
+            cache_desc.size_in_cachelines(&scrub_area) <<
+            cache_desc.cacheline_width());
     }
     println!("total size {}", total_bytes);
 
@@ -58,7 +60,6 @@ fn main() -> std::io::Result<()> {
         }
 
         if data == MAP_FAILED {
-println!("mmap failed");
             return Err(std::io::Error::last_os_error());
         }
 
@@ -71,17 +72,19 @@ println!("mmap failed");
     // Print the tuples in the vector
     println!("Mapped addresses:");
     for scrub_area in &virt_scrub_areas {
-        println!("{:?}", scrub_area);
+        println!("{:p}-{:p}: %{}", scrub_area.start, scrub_area.end,
+            cache_desc.size_in_cachelines(&scrub_area) <<
+            cache_desc.cacheline_width());
     }
 
     let mut scrubber = match MemoryScrubber::<CacheDesc,
         Cacheline>::new(&mut cache_desc, &virt_scrub_areas) {
-        Err(e) => panic!("Failed to create memory scrubber: {}", e),
+        Err(_) => panic!("Failed to create memory scrubber"),
         Ok(scrubber) => scrubber,
     };
 
     match scrubber.scrub(total_bytes) {
-        Err(e) => panic!("Scrub failed: {}", e),
+        Err(_) => panic!("Scrub failed"),
         Ok(_) => {},
     }
 
