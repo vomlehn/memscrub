@@ -7,11 +7,11 @@ use std::os::unix::io::AsRawFd;
 use std::process::{Command, Stdio};
 use std::ptr;
 
-use memscrublib_arch::{BaseCacheDesc, CACHE_DESC, CacheDesc, Cacheline,
+use memscrublib::{BaseCacheDesc, CacheDesc, Cacheline,
     MemoryScrubber, ScrubArea};
 
 fn main() -> std::io::Result<()> {
-    let mut cache_desc = CACHE_DESC.clone();
+    let mut cache_desc = CacheDesc {};
     let phys_scrub_areas = read_scrub_areas();
 
     let mut total_bytes: usize = 0;
