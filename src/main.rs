@@ -11,6 +11,10 @@ use memscrublib::{BaseCacheDesc, CacheDesc, Cacheline,
     MemoryScrubber, ScrubArea};
 
 fn main() -> std::io::Result<()> {
+    scrub_dev_mem()
+}
+
+fn scrub_dev_mem() -> std::io::Result<()> {
     let mut cache_desc = CacheDesc {};
     let phys_scrub_areas = read_scrub_areas();
 
@@ -64,9 +68,9 @@ fn main() -> std::io::Result<()> {
         }
 
         let end = data as usize + length - 1;
-        let scrub_area =
+        let virt_scrub_area =
             ScrubArea { start: data as *const u8, end: end as *const u8, };
-        virt_scrub_areas.push(scrub_area);
+        virt_scrub_areas.push(virt_scrub_area);
     }
 
     // Print the tuples in the vector
