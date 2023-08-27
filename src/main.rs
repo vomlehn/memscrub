@@ -7,15 +7,54 @@ use std::os::unix::io::AsRawFd;
 use std::process::{Command, Stdio};
 use std::ptr;
 
-use memscrublib::{BaseCacheDesc, CacheDesc, Cacheline,
-    MemoryScrubber, ScrubArea};
+use memscrublib_base::{CacheDesc, Cacheline, MemoryScrubber, ScrubArea};
+
+// Basic configuration
+const CACHE_INDEX_WIDTH: usize = 10;
+const CACHELINE_ITEMS: usize = 8;
+
+type MyECCData = u64;
+
+struct MyCacheline {
+    data: [MyECCData; CACHELINE_ITEMS],
+}
+
+impl Cacheline for MyCacheline {
+}
+
+struct MyCacheDesc {
+    my_cache_index_width: usize,
+}
+
+impl MyCacheDesc {
+    fn new(my_cache_index_width: usize) -> MyCacheDesc {
+        MyCacheDesc {
+            my_cache_index_width: my_cache_index_width,
+        }
+    }
+}
+
+impl CacheDesc<MyCacheline> for MyCacheDesc {
+    fn cache_index_width(&self) -> usize {
+        self.my_cache_index_width
+    }
+
+    fn read_cacheline(&mut self, cacheline_ptr: *const MyCacheline) {
+        // Get a safe reference to the cache line
+        let cacheline = unsafe { &*cacheline_ptr };
+        // Get a reference to the first element
+        let cacheline_data = &cacheline.data[0];
+        // Read from the first element
+        let _dummy = unsafe { ptr::read(cacheline_data) };
+    }
+}
 
 fn main() -> std::io::Result<()> {
     scrub_dev_mem()
 }
 
 fn scrub_dev_mem() -> std::io::Result<()> {
-    let mut cache_desc = CacheDesc {};
+    let mut cache_desc = MyCacheDesc::new(CACHE_INDEX_WIDTH);
     let phys_scrub_areas = read_scrub_areas();
 
     let mut total_bytes: usize = 0;
@@ -81,8 +120,8 @@ fn scrub_dev_mem() -> std::io::Result<()> {
             cache_desc.cacheline_width());
     }
 
-    let mut scrubber = match MemoryScrubber::<CacheDesc,
-        Cacheline>::new(&mut cache_desc, &virt_scrub_areas) {
+    let mut scrubber = match MemoryScrubber::<MyCacheDesc, MyCacheline>
+        ::new(&mut cache_desc, &virt_scrub_areas) {
         Err(_) => panic!("Failed to create memory scrubber"),
         Ok(scrubber) => scrubber,
     };

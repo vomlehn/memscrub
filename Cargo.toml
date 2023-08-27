@@ -7,7 +7,4 @@ edition = "2021"
 
 [dependencies]
 libc = "0.2"
-memscrublib = { path = "../memscrublib" }
-memscrublib_arch = { path = "../memscrublib_arch" }
 memscrublib_base = { path = "../memscrublib_base" }
-
