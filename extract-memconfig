@@ -1,5 +1,13 @@
 #!/usr/bin/python3
 
+# It might be better to use:
+#   udevadm info -e | grep -e MEMORY_DEVICE -e MEMORY_ARRAY 
+# or
+#   sudo dmidecode --type memory
+#
+# However, neither of these appear to report the physical address of the
+# memory.
+
 # The configuration of physical memory isn't readily available in places like
 # the /sys filesystem, so this parses the dmesg output stored in
 # /var/log/dmesg. It then prints a description of all of the usable RAM
